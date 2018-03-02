@@ -1,17 +1,16 @@
-import datetime
+import warnings
+warnings.filterwarnings(action='ignore', category=UserWarning, module='gensim')
 import numpy as np
-import pandas as pd
 import nltk
 import tensorflow as tf
-import re
-from gensim.models import Word2Vec, KeyedVectors
+from gensim.models import KeyedVectors
 
 
 print('Import word2vec')
 filename = './model/GoogleNews-vectors-negative300.bin'
 model = KeyedVectors.load_word2vec_format(filename, binary=True)
 wordBank = model.vocab.keys()
-maxSeqLength = 80
+maxSeqLength = 150
 
 while True:
 	contents = []

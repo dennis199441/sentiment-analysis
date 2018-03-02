@@ -1,20 +1,21 @@
+import warnings
+warnings.filterwarnings(action='ignore', category=UserWarning, module='gensim')
+warnings.filterwarnings(action='ignore', category=UserWarning, module='tensorflow')
 import datetime
 import numpy as np
 import pandas as pd
 import nltk
 import tensorflow as tf
-from gensim.models import Word2Vec, KeyedVectors
+from gensim.models import KeyedVectors
 from random import randint
-from matplotlib import pyplot as plt
-from matplotlib import style
-style.use('ggplot')
 
 df = pd.read_csv('./dataset/sum.csv', sep='\|\|', engine='python')
 df = df.sort_values(by=['sentiment'])
 
+# 0 22603 50156
 contents = []
 words = []
-maxSeqLength = 0
+maxSeqLength = 150
 seqLengthCount = []
 
 for s in df['content']:
@@ -30,10 +31,12 @@ for s in df['content']:
 
 	contents.append(tokens)
 
+print('Prepare word2vec and wordBank')
 filename = './model/GoogleNews-vectors-negative300.bin'
 model = KeyedVectors.load_word2vec_format(filename, binary=True)
 wordBank = model.vocab.keys()
-
+print('word2vec done!')
+print('wordBank done!')
 '''
 Initialize model
 '''
@@ -44,6 +47,7 @@ Initialize model
 '''
 Visualize by reducing dimention using PCA
 '''
+print('Prepare wordVectors')
 vectors = []
 wordsList = []
 vectorCount = 0
@@ -61,18 +65,19 @@ for word in words:
 
 avgVector = temp / vectorCount
 vectors.append(avgVector)
-print(len(vectors))
-wordVectors = np.array(vectors)
-
+wordVectors = np.array(vectors, dtype='float32')
+print('wordVectors done!')
 
 '''
 Convert contents to ids matrix
 '''
+print('Prepare ids matrix')
 unknownVectorIndex = len(vectors) - 1
 numContents = len(contents)
 ids = np.full((numContents, maxSeqLength), unknownVectorIndex, dtype='int32')
 contentCounter = 0
 for content in contents:
+	print('----Processing content:', contentCounter, '/', numContents - 1, end='\r')
 	indexCounter = 0
 	for c in content:
 		try:
@@ -83,10 +88,18 @@ for content in contents:
 	
 	contentCounter += 1
 
-# with tf.Session() as sess:
-#     print(tf.nn.embedding_lookup(wordVectors,ids[0]).eval().shape)
+print('ids matrix done!')
 
-print('ids.shape:', ids.shape)
+
+'''
+RNN model 
+'''
+print('Prepare computational graph')
+batchSize = 24
+lstmUnits = 64
+numClasses = 2
+iterations = 100000
+numDimensions = 300
 
 '''
 Helper functions for training network
@@ -96,10 +109,10 @@ def getTrainBatch():
     arr = np.zeros([batchSize, maxSeqLength])
     for i in range(batchSize):
         if (i % 2 == 0): 
-            num = randint(2000,2999)
+            num = randint(27603,50155)
             labels.append([1,0])
         else:
-            num = randint(1,999)
+            num = randint(1,17603)
             labels.append([0,1])
         arr[i] = ids[num-1:num]
     return arr, labels
@@ -108,24 +121,13 @@ def getTestBatch():
     labels = []
     arr = np.zeros([batchSize, maxSeqLength])
     for i in range(batchSize):
-        num = randint(1000,1999)
-        if (num > 1499):
+        num = randint(17604,27602)
+        if (num > 22603):
             labels.append([1,0])
         else:
             labels.append([0,1])
         arr[i] = ids[num-1:num]
     return arr, labels
-
-
-'''
-RNN model 
-'''
-print('Construct computational graph')
-batchSize = 24
-lstmUnits = 64
-numClasses = 2
-iterations = 100000
-numDimensions = 300
 
 tf.reset_default_graph()
 labels = tf.placeholder(tf.float32, [batchSize, numClasses])
@@ -149,7 +151,7 @@ accuracy = tf.reduce_mean(tf.cast(correctPred, tf.float32))
 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=labels))
 # loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=prediction, labels=tf.stop_gradient(labels))
 optimizer = tf.train.AdamOptimizer().minimize(loss)
-
+print('Computational graph done!')
 
 '''
 Training
@@ -165,9 +167,9 @@ with tf.Session() as sess:
 	logdir = "tensorboard/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "/"
 	writer = tf.summary.FileWriter(logdir, sess.graph)
 
-	loop = 1
 	for i in range(iterations):
-		
+		print("Training iteration: %s" % i, end='\r')
+
 		#Next Batch of reviews
 		nextBatch, nextBatchLabels = getTrainBatch()
 		sess.run(optimizer, {input_data: nextBatch, labels: nextBatchLabels})
@@ -179,13 +181,11 @@ with tf.Session() as sess:
 		
 		#Save the network every 10,000 training iterations
 		if (i % 10000 == 0 and i != 0):
-			print('Save network:', loop)
-			save_path = saver.save(sess, "models/pretrained_lstm.ckpt")
+			print('Save network:', i)
+			save_path = saver.save(sess, "models/pretrained_lstm_large.ckpt")
 			print("saved to %s" % save_path)
 
-		loop += 1
-
-	save_path = saver.save(sess, "models/pretrained_lstm.ckpt")
+	save_path = saver.save(sess, "models/pretrained_lstm_large.ckpt")
 	print("saved to %s" % save_path)
 
 	writer.close()
